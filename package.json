@@ -1,10 +1,13 @@
 {
   "name": "github-slack-notifier",
   "version": "1.0.0",
-  "description": "Cloud Run service that forwards GitHub webhook events to Slack when @ken-lexolve is mentioned",
+  "description": "GitHub webhook → Slack notifier for OpenClaw agents. Notifies on mentions, reviews, and automatically triggers PR review fix checks after 5 minutes.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.0.0"
   },
   "engines": {
     "node": ">=18"

@@ -2,10 +2,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json ./
-COPY index.js ./
+COPY package.json package-lock.json* ./
+RUN npm install --production --frozen-lockfile || npm install --production
 
-# No npm install needed — zero dependencies (uses only Node.js built-ins)
+COPY index.js ./
 
 ENV NODE_ENV=production
 ENV PORT=8080
