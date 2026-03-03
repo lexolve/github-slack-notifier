@@ -1,0 +1,74 @@
+substitutions:
+  _APP_NAME: 'github-slack-notifier'
+  _REGION: 'europe-west1'
+  _SLACK_WEBHOOK_SECRET_NAME: 'github-slack-notifier-slack-webhook-url'
+  _GITHUB_WEBHOOK_SECRET_NAME: 'github-slack-notifier-webhook-secret'
+
+steps:
+  - id: 'Get short SHA'
+    name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-eEuo'
+      - 'pipefail'
+      - '-c'
+      - |
+        echo "$(git rev-parse --short HEAD)" > /workspace/SHORT_SHA
+        echo "Short SHA: $(cat /workspace/SHORT_SHA)"
+
+  - id: 'Build image'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-eEuo'
+      - 'pipefail'
+      - '-c'
+      - |
+        SHORT_SHA=$(cat /workspace/SHORT_SHA)
+        docker build \
+          -t eu.gcr.io/$PROJECT_ID/${_APP_NAME}:latest \
+          -t eu.gcr.io/$PROJECT_ID/${_APP_NAME}:$SHORT_SHA \
+          --cache-from eu.gcr.io/$PROJECT_ID/${_APP_NAME}:latest \
+          .
+
+  - id: 'Push image'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-eEuo'
+      - 'pipefail'
+      - '-c'
+      - |
+        SHORT_SHA=$(cat /workspace/SHORT_SHA)
+        docker push eu.gcr.io/$PROJECT_ID/${_APP_NAME}:$SHORT_SHA
+        docker push eu.gcr.io/$PROJECT_ID/${_APP_NAME}:latest
+
+  - id: 'Deploy to Cloud Run'
+    name: 'gcr.io/cloud-builders/gcloud-slim'
+    entrypoint: 'bash'
+    args:
+      - '-eEuo'
+      - 'pipefail'
+      - '-c'
+      - |
+        SHORT_SHA=$(cat /workspace/SHORT_SHA)
+        gcloud run deploy ${_APP_NAME} \
+          --image eu.gcr.io/$PROJECT_ID/${_APP_NAME}:$SHORT_SHA \
+          --region ${_REGION} \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 8080 \
+          --cpu 1 \
+          --memory 256Mi \
+          --min-instances 0 \
+          --max-instances 3 \
+          --timeout 30 \
+          --concurrency 80 \
+          --labels service=${_APP_NAME} \
+          --update-secrets="SLACK_WEBHOOK_URL=${_SLACK_WEBHOOK_SECRET_NAME}:latest" \
+          --update-secrets="GITHUB_WEBHOOK_SECRET=${_GITHUB_WEBHOOK_SECRET_NAME}:latest"
+
+options:
+  machineType: E2_HIGHCPU_8
+
+timeout: 600s
