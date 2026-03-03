@@ -1,6 +1,6 @@
 # github-slack-notifier
 
-A lightweight Cloud Run service that listens for GitHub webhook events and sends Slack notifications when [`@ken-lexolve`](https://github.com/ken-lexolve) is mentioned or reviewed.
+A lightweight Cloud Run service that listens for GitHub webhook events and sends Slack notifications when an [OpenClaw](https://openclaw.ai) AI assistant is mentioned or reviewed on GitHub.
 
 Zero dependencies — uses only Node.js built-ins.
 
@@ -12,10 +12,10 @@ Sends a Slack notification when any of the following happen:
 
 | Event | Trigger |
 |---|---|
-| `pull_request_review` | Someone reviews a PR authored by `ken-lexolve` |
-| `pull_request_review_comment` | Someone comments on a diff in a PR by `ken-lexolve` |
-| `issue_comment` | Someone mentions `@ken-lexolve` in a comment, or comments on their PR/issue |
-| `pull_request` | `ken-lexolve` is requested as a reviewer, or mentioned in PR body |
+| `pull_request_review` | Someone reviews a PR authored by the watched user |
+| `pull_request_review_comment` | Someone comments on a diff in a PR by the watched user |
+| `issue_comment` | Someone mentions the watched user in a comment, or comments on their PR/issue |
+| `pull_request` | The watched user is requested as a reviewer, or mentioned in a PR body |
 
 ---
 
@@ -38,7 +38,7 @@ sender reviewed your PR in lexolve/backend-api
 |---|---|---|
 | `SLACK_WEBHOOK_URL` | ✅ | Slack Incoming Webhook URL |
 | `GITHUB_WEBHOOK_SECRET` | Recommended | HMAC secret to verify webhook authenticity |
-| `WATCHED_GITHUB_USER` | Optional | GitHub username to watch (default: `ken-lexolve`) |
+| `WATCHED_GITHUB_USER` | Optional | GitHub username to watch (default: `openclaw`) |
 | `PORT` | Optional | HTTP port (default: `8080`) |
 
 ---
@@ -49,19 +49,27 @@ sender reviewed your PR in lexolve/backend-api
 
 ```bash
 export PROJECT_ID=your-gcp-project
-export IMAGE=gcr.io/$PROJECT_ID/github-slack-notifier
+export IMAGE=eu.gcr.io/$PROJECT_ID/github-slack-notifier
 
 docker build -t $IMAGE .
 docker push $IMAGE
 ```
 
-Or use Cloud Build directly:
+Or let Cloud Build do it (see `cloudbuild.yaml`).
+
+### 2. Create secrets in Secret Manager
 
 ```bash
-gcloud builds submit --tag $IMAGE
+echo -n "https://hooks.slack.com/..." | \
+  gcloud secrets create github-slack-notifier-slack-webhook-url \
+  --data-file=- --project=$PROJECT_ID
+
+echo -n "your-webhook-secret" | \
+  gcloud secrets create github-slack-notifier-webhook-secret \
+  --data-file=- --project=$PROJECT_ID
 ```
 
-### 2. Deploy to Cloud Run
+### 3. Deploy to Cloud Run
 
 ```bash
 gcloud run deploy github-slack-notifier \
@@ -69,23 +77,17 @@ gcloud run deploy github-slack-notifier \
   --platform managed \
   --region europe-west1 \
   --allow-unauthenticated \
-  --set-env-vars SLACK_WEBHOOK_URL=<your-slack-webhook-url> \
-  --set-env-vars GITHUB_WEBHOOK_SECRET=<your-webhook-secret> \
-  --set-env-vars WATCHED_GITHUB_USER=ken-lexolve \
+  --update-secrets="SLACK_WEBHOOK_URL=github-slack-notifier-slack-webhook-url:latest" \
+  --update-secrets="GITHUB_WEBHOOK_SECRET=github-slack-notifier-webhook-secret:latest" \
+  --set-env-vars WATCHED_GITHUB_USER=your-github-username \
   --min-instances 0 \
   --max-instances 3 \
-  --memory 128Mi
+  --memory 256Mi
 ```
-
-> 💡 **Secrets tip:** Use `--set-secrets` instead of `--set-env-vars` for production to pull from Google Secret Manager:
-> ```bash
-> --set-secrets SLACK_WEBHOOK_URL=slack-webhook-url:latest
-> --set-secrets GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest
-> ```
 
 After deploy, note the service URL (e.g. `https://github-slack-notifier-xyz-ew.a.run.app`).
 
-### 3. Configure the GitHub webhook
+### 4. Configure the GitHub webhook
 
 Go to your GitHub **org or repo → Settings → Webhooks → Add webhook**:
 
@@ -100,13 +102,28 @@ Click **Add webhook**. GitHub will send a ping event — check Cloud Run logs to
 
 ---
 
+## Automated deploys via Cloud Build
+
+The included `cloudbuild.yaml` deploys automatically on every push to `main`.
+
+Set up the trigger:
+
+```bash
+gcloud builds triggers create github \
+  --repo-name=github-slack-notifier \
+  --repo-owner=lexolve \
+  --branch-pattern=^main$ \
+  --build-config=cloudbuild.yaml \
+  --project=your-gcp-project
+```
+
+---
+
 ## Health check
 
 ```
 GET /health → 200 OK
 ```
-
-Cloud Run uses this endpoint automatically if configured.
 
 ---
 
@@ -115,6 +132,7 @@ Cloud Run uses this endpoint automatically if configured.
 ```bash
 SLACK_WEBHOOK_URL=https://hooks.slack.com/... \
 GITHUB_WEBHOOK_SECRET=mysecret \
+WATCHED_GITHUB_USER=your-github-username \
 node index.js
 ```
 
@@ -126,7 +144,7 @@ curl -X POST http://localhost:8080/webhook \
   -H "X-GitHub-Event: issue_comment" \
   -d '{
     "action": "created",
-    "comment": { "body": "Hey @ken-lexolve, can you take a look?", "html_url": "https://github.com/lexolve/backend-api/issues/1#issuecomment-1" },
+    "comment": { "body": "Hey @openclaw, can you take a look?", "html_url": "https://github.com/lexolve/backend-api/issues/1#issuecomment-1" },
     "issue": { "title": "Bug: login fails on mobile" },
     "repository": { "full_name": "lexolve/backend-api" },
     "sender": { "login": "ruben" }

@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const PORT = process.env.PORT || 8080;
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
-const WATCHED_USER = process.env.WATCHED_GITHUB_USER || "ken-lexolve";
+const WATCHED_USER = process.env.WATCHED_GITHUB_USER || "openclaw";
 
 if (!SLACK_WEBHOOK_URL) {
   console.error("FATAL: SLACK_WEBHOOK_URL is not set");
