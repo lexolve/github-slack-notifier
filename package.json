@@ -1,13 +1,10 @@
 {
   "name": "github-slack-notifier",
   "version": "1.0.0",
-  "description": "GitHub webhook → Slack notifier for OpenClaw agents. Notifies on mentions, reviews, and automatically triggers PR review fix checks after 5 minutes.",
+  "description": "GitHub webhook → Slack notifier for OpenClaw agents. Zero dependencies — uses only Node.js built-ins.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
-  },
-  "dependencies": {
-    "google-auth-library": "^9.0.0"
   },
   "engines": {
     "node": ">=18"
