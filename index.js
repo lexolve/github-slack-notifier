@@ -22,22 +22,22 @@ function verifySignature(secret, payload, signature) {
   }
 }
 
+// Only fire when @WATCHED_USER is explicitly mentioned or requested as reviewer.
+// New PRs are handled separately via the #github Slack channel.
 function isRelevant(event, payload) {
   const body = payload.comment?.body || payload.review?.body || payload.pull_request?.body || "";
   const mentionPattern = new RegExp(`@${WATCHED_USER}\\b`, "i");
   const isMentioned = mentionPattern.test(body);
-  const isPRAuthor =
-    payload.pull_request?.user?.login?.toLowerCase() === WATCHED_USER.toLowerCase();
+
   const isReviewRequested =
     event === "pull_request" &&
     payload.action === "review_requested" &&
     payload.requested_reviewer?.login?.toLowerCase() === WATCHED_USER.toLowerCase();
-  const isNewPR = event === "pull_request" && payload.action === "opened";
 
-  if (event === "pull_request_review" && isPRAuthor) return true;
-  if (event === "pull_request_review_comment" && isPRAuthor) return true;
-  if (event === "issue_comment" && (isMentioned || isPRAuthor)) return true;
-  if (event === "pull_request" && (isMentioned || isReviewRequested || isNewPR)) return true;
+  if (event === "pull_request_review_comment" && isMentioned) return true;
+  if (event === "pull_request_review" && isMentioned) return true;
+  if (event === "issue_comment" && isMentioned) return true;
+  if (event === "pull_request" && (isMentioned || isReviewRequested)) return true;
 
   return false;
 }
@@ -56,33 +56,21 @@ function buildSlackMessage(event, payload) {
   let snippet = comment?.body || review?.body || pr?.body || "";
   if (snippet.length > 200) snippet = snippet.slice(0, 200) + "\u2026";
 
-  let action = "mentioned you";
-  if (event === "pull_request_review") action = "reviewed your PR";
-  if (event === "pull_request_review_comment") action = "commented on your PR diff";
-  if (event === "issue_comment") action = "commented on an issue/PR";
+  let action = `mentioned @${WATCHED_USER}`;
   if (event === "pull_request" && payload.action === "review_requested")
-    action = "requested your review";
-  if (event === "pull_request" && payload.action === "opened")
-    action = `opened a new PR in \`${repo}\``;
-
-  // For new PRs: include a special marker so the AI agent knows to schedule a local reminder
-  const isNewPR = event === "pull_request" && payload.action === "opened";
-  const prNumber = pr?.number;
-  const footerText = isNewPR
-    ? `\n_🤖 PR_REVIEW_CHECK pr=${prNumber} repo=${repo} url=${url}_`
-    : null;
+    action = `requested a review from @${WATCHED_USER}`;
 
   return {
-    text: `GitHub notification for @${WATCHED_USER}`,
+    text: `GitHub: @${WATCHED_USER} was mentioned`,
     blocks: [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*<${url}|${title}>*\n*${sender}* ${action}${footerText || ""}`,
+          text: `*<${url}|${title}>*\n*${sender}* ${action} in \`${repo}\``,
         },
       },
-      snippet && !isNewPR
+      snippet
         ? {
             type: "section",
             text: {
@@ -189,5 +177,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`github-slack-notifier listening on port ${PORT}`);
-  console.log(`Watching for mentions of: @${WATCHED_USER}`);
+  console.log(`Watching for direct mentions of: @${WATCHED_USER}`);
 });
