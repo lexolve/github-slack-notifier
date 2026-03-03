@@ -1,0 +1,13 @@
+{
+  "name": "github-slack-notifier",
+  "version": "1.0.0",
+  "description": "Cloud Run service that forwards GitHub webhook events to Slack when @ken-lexolve is mentioned",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
