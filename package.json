@@ -4,7 +4,8 @@
   "description": "GitHub webhook → Slack notifier for OpenClaw agents. Zero dependencies — uses only Node.js built-ins.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

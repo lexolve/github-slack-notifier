@@ -1,6 +1,6 @@
 # github-slack-notifier
 
-A lightweight Cloud Run service that listens for GitHub webhook events and sends Slack notifications when an [OpenClaw](https://openclaw.ai) AI assistant is mentioned or reviewed on GitHub.
+A lightweight Cloud Run service that listens for GitHub webhook events. It sends Slack notifications when an [OpenClaw](https://openclaw.ai) AI assistant is mentioned or requested as reviewer, and can optionally forward selected pull-request lifecycle events to an authenticated OpenClaw hook.
 
 Zero dependencies — uses only Node.js built-ins.
 
@@ -12,10 +12,20 @@ Sends a Slack notification when any of the following happen:
 
 | Event | Trigger |
 |---|---|
-| `pull_request_review` | Someone reviews a PR authored by the watched user |
-| `pull_request_review_comment` | Someone comments on a diff in a PR by the watched user |
-| `issue_comment` | Someone mentions the watched user in a comment, or comments on their PR/issue |
-| `pull_request` | The watched user is requested as a reviewer, or mentioned in a PR body |
+| `pull_request_review` | The review body mentions the watched user |
+| `pull_request_review_comment` | The diff comment mentions the watched user |
+| `issue_comment` | The comment mentions the watched user |
+| `pull_request` | The watched user is requested as reviewer or mentioned in the PR body |
+
+When the optional OpenClaw hook is configured, it also forwards these normalized observer events without posting Slack noise:
+
+| Event | OpenClaw event kind |
+|---|---|
+| Non-draft `pull_request.synchronize` | `pr_head_changed` |
+| Non-draft `pull_request_review.submitted` | `pr_review_submitted` |
+| Reply to an existing non-draft review thread | `pr_review_thread_replied` |
+
+Initial inline comments are coalesced through the submitted-review event instead of starting one agent turn per comment. Later thread replies receive their own event. Events authored by the watched user are ignored to prevent feedback loops. The observer payload contains identifiers and bounded metadata, not PR, review, or comment bodies. OpenClaw fetches authoritative current state from GitHub before acting.
 
 ---
 
@@ -37,8 +47,13 @@ sender reviewed your PR in lexolve/backend-api
 | Variable | Required | Description |
 |---|---|---|
 | `SLACK_WEBHOOK_URL` | ✅ | Slack Incoming Webhook URL |
-| `GITHUB_WEBHOOK_SECRET` | Recommended | HMAC secret to verify webhook authenticity |
+| `GITHUB_WEBHOOK_SECRET` | Recommended; required with OpenClaw | HMAC secret to verify webhook authenticity |
 | `WATCHED_GITHUB_USER` | Optional | GitHub username to watch (default: `openclaw`) |
+| `OPENCLAW_HOOK_URL` | Optional, paired | HTTPS OpenClaw hook base ending in `/hooks` or full `/hooks/agent` URL; HTTP is accepted only for loopback testing |
+| `OPENCLAW_HOOK_TOKEN` | Optional, paired | Dedicated bearer token for OpenClaw hook ingress |
+| `OPENCLAW_AGENT_ID` | Optional | Target OpenClaw agent (default: `main`) |
+| `OPENCLAW_OBSERVER_MODE` | Optional | `observe` (read-only, default) or `review` (existing patrol authority) |
+| `OPENCLAW_HOOK_TIMEOUT_MS` | Optional | Observer request timeout in milliseconds (default: `10000`) |
 | `PORT` | Optional | HTTP port (default: `8080`) |
 
 ---
@@ -102,6 +117,27 @@ Click **Add webhook**. GitHub will send a ping event — check Cloud Run logs to
 
 ---
 
+## OpenClaw observer rollout
+
+The observer is disabled unless both `OPENCLAW_HOOK_URL` and `OPENCLAW_HOOK_TOKEN` are set. Partial configuration fails startup. Enabling it also requires `GITHUB_WEBHOOK_SECRET`, so unverified GitHub payloads cannot reach the agent.
+
+Configure the OpenClaw Gateway before adding the Cloud Run environment variables:
+
+- Enable authenticated HTTP hooks on a dedicated path.
+- Use a dedicated hook token; do not reuse Gateway, Slack, or GitHub credentials.
+- Restrict `allowedAgentIds` to the intended agent.
+- Keep `allowRequestSessionKey` disabled.
+- Route observer turns to isolated sessions with fallback delivery disabled.
+- Expose only the hook path through an approved secure network route.
+
+The current `cloudbuild.yaml` intentionally does not mount the optional OpenClaw URL/token. Add those deployment settings only after the Gateway hook and protected secret exist. This avoids breaking the existing Slack-only deployment.
+
+Observer delivery is best effort. A temporary OpenClaw failure is logged but returns success to GitHub; the scheduled PR patrol remains the reconciliation path. Slack mention delivery retains its existing retry behavior. GitHub's delivery ID is sent as OpenClaw's `Idempotency-Key` header and request field so webhook retries reuse the admitted hook run.
+
+Inbound webhook bodies are capped at 1 MiB. OpenClaw receives only the normalized event, which is far below its hook body limit.
+
+Start with `OPENCLAW_OBSERVER_MODE=observe`. Hook turns may inspect and report into OpenClaw run history but must not write to GitHub, Linear, Slack, or other external systems. Change to `review` only when the event path is ready to assume the existing PR patrol's standing review authority.
+
 ## Automated deploys via Cloud Build
 
 The included `cloudbuild.yaml` deploys automatically on every push to `main`.
@@ -129,12 +165,22 @@ GET /health → 200 OK
 
 ## Local development
 
+Run the focused test suite:
+
+```bash
+npm test
+```
+
+Run in Slack-only mode:
+
 ```bash
 SLACK_WEBHOOK_URL=https://hooks.slack.com/... \
 GITHUB_WEBHOOK_SECRET=mysecret \
 WATCHED_GITHUB_USER=your-github-username \
 node index.js
 ```
+
+For local observer testing, point `OPENCLAW_HOOK_URL` at a controlled test receiver and provide a matching placeholder token. Do not test against the live Gateway until its hook configuration and network route have been reviewed.
 
 Test with a sample payload:
 
