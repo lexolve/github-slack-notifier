@@ -12,8 +12,13 @@ if (!SLACK_WEBHOOK_URL) {
   process.exit(1);
 }
 
+if (!GITHUB_WEBHOOK_SECRET?.trim()) {
+  console.error("FATAL: GITHUB_WEBHOOK_SECRET is not set");
+  process.exit(1);
+}
+
 function verifySignature(secret, payload, signature) {
-  if (!secret) return true;
+  if (!secret) return false;
   const expected = "sha256=" + crypto.createHmac("sha256", secret).update(payload).digest("hex");
   try {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature || ""));
@@ -136,7 +141,7 @@ const server = http.createServer((req, res) => {
   req.on("data", (chunk) => (rawBody += chunk));
   req.on("end", async () => {
     const sig = req.headers["x-hub-signature-256"];
-    if (GITHUB_WEBHOOK_SECRET && !verifySignature(GITHUB_WEBHOOK_SECRET, rawBody, sig)) {
+    if (!verifySignature(GITHUB_WEBHOOK_SECRET, rawBody, sig)) {
       console.warn("Invalid signature — ignoring request");
       res.writeHead(401);
       res.end("Unauthorized");

@@ -37,7 +37,7 @@ sender reviewed your PR in lexolve/backend-api
 | Variable | Required | Description |
 |---|---|---|
 | `SLACK_WEBHOOK_URL` | ✅ | Slack Incoming Webhook URL |
-| `GITHUB_WEBHOOK_SECRET` | Recommended | HMAC secret to verify webhook authenticity |
+| `GITHUB_WEBHOOK_SECRET` | ✅ | HMAC secret to verify webhook authenticity |
 | `WATCHED_GITHUB_USER` | Optional | GitHub username to watch (default: `openclaw`) |
 | `PORT` | Optional | HTTP port (default: `8080`) |
 
@@ -136,7 +136,12 @@ WATCHED_GITHUB_USER=your-github-username \
 node index.js
 ```
 
-Test with a sample payload:
+The service refuses startup without a nonblank signing secret. Every webhook must
+carry a matching `X-Hub-Signature-256` HMAC; unsigned requests return 401.
+`GET /health` remains public. Run the isolated authentication checks with
+`node --test index.auth.test.js`.
+
+The unsigned sample below is rejected with 401:
 
 ```bash
 curl -X POST http://localhost:8080/webhook \
