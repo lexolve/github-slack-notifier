@@ -105,6 +105,32 @@ test("HTTP authentication denies forged notifications and preserves signed deliv
     assert.equal(notifications.at(-1).text, "GitHub: @synthetic-user was mentioned");
     assert.match(notifications.at(-1).blocks[0].text.text, /synthetic-sender.*synthetic\/repo/s);
   });
+  await t.test("preserves signed UTF-8 bytes across request data chunks", async () => {
+    const payload = Buffer.from(body.replace("please review", "blåbær 😀"));
+    const split = payload.indexOf(Buffer.from("😀")) + 1;
+    const previousCount = notifications.length;
+    const incoming = Object.assign(new EventEmitter(), {
+      method: "POST", url: "/webhook",
+      headers: {
+        "x-github-event": "issue_comment",
+        "x-hub-signature-256": `sha256=${crypto.createHmac("sha256", secret).update(payload).digest("hex")}`,
+      },
+    });
+    const response = await new Promise((resolve) => {
+      let status;
+      loadEntrypoint(secret, notifications)(incoming, {
+        writeHead(code) { status = code; },
+        end(text) { resolve({ status, text }); },
+      });
+      incoming.emit("data", payload.subarray(0, split));
+      incoming.emit("data", payload.subarray(split));
+      incoming.emit("end");
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.text, "OK");
+    assert.equal(notifications.length, previousCount + 1);
+    assert.match(notifications.at(-1).blocks[1].text.text, /blåbær 😀/u);
+  });
   await t.test("an irrelevant signed event is ignored and health remains public", async () => {
     const previousCount = notifications.length;
     const response = await post(sign(secret), "ping");

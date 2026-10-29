@@ -137,9 +137,10 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let rawBody = "";
-  req.on("data", (chunk) => (rawBody += chunk));
+  const bodyChunks = [];
+  req.on("data", (chunk) => bodyChunks.push(chunk));
   req.on("end", async () => {
+    const rawBody = Buffer.concat(bodyChunks);
     const sig = req.headers["x-hub-signature-256"];
     if (!verifySignature(GITHUB_WEBHOOK_SECRET, rawBody, sig)) {
       console.warn("Invalid signature — ignoring request");
@@ -151,7 +152,7 @@ const server = http.createServer((req, res) => {
     const event = req.headers["x-github-event"];
     let payload;
     try {
-      payload = JSON.parse(rawBody);
+      payload = JSON.parse(rawBody.toString("utf8"));
     } catch {
       res.writeHead(400);
       res.end("Bad request");
